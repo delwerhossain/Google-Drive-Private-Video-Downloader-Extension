@@ -1,3 +1,22 @@
+// Drive's player fetches video info from one of these hosts (the old one is kept as a fallback).
+const PLAYBACK_URL_PREFIXES = [
+    "https://content-workspacevideo-pa.googleapis.com/",
+    "https://workspacevideo-pa.clients6.google.com/"
+];
+
+function isPlaybackUrl(url) {
+    return PLAYBACK_URL_PREFIXES.some(prefix => url.startsWith(prefix));
+}
+
+// Transcodes are not sorted by quality, so pick the one with the largest height.
+function pickBestTranscode(transcodes) {
+    const valid = transcodes.filter(t => t?.url);
+    if (valid.length === 0) return undefined;
+    return valid.reduce((best, t) =>
+        (t.transcodeMetadata?.height || 0) > (best.transcodeMetadata?.height || 0) ? t : best
+    );
+}
+
 let capturedRequests = {};
 let pollingTimers = {};
 let autoPopupCount = {};
@@ -117,7 +136,7 @@ chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
     if (!extensionEnabled && !pendingTabs.has(tabId)) return;
 
     if (method === "Network.requestWillBeSent") {
-        if (params.request.url.startsWith("https://workspacevideo-pa.clients6.google.com")) {
+        if (isPlaybackUrl(params.request.url) && params.request.method !== "OPTIONS") {
             const requestId = params.requestId;
             capturedRequests[requestId] = {
                 url: params.request.url,
@@ -126,7 +145,8 @@ chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
                 tabId: tabId
             };
         }
-    } else if (method === "Network.responseReceived") {
+    } else if (method === "Network.loadingFinished") {
+        // The response body is only guaranteed to be available once loading has finished.
         const requestId = params.requestId;
         if (capturedRequests[requestId]) {
             chrome.debugger.sendCommand(
@@ -141,7 +161,7 @@ chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
                         const data = JSON.parse(result.body);
                         if (data.mediaStreamingData?.formatStreamingData?.progressiveTranscodes) {
                             const transcodes = data.mediaStreamingData.formatStreamingData.progressiveTranscodes;
-                            capturedRequests[requestId].lastItagUrl = transcodes[transcodes.length - 1]?.url;
+                            capturedRequests[requestId].lastItagUrl = pickBestTranscode(transcodes)?.url;
                         }
                         if (data.mediaMetadata?.title) {
                             capturedRequests[requestId].videoTitle = data.mediaMetadata.title;

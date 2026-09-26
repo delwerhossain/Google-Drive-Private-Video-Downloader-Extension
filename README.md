@@ -32,8 +32,8 @@ Drive Private Video Downloader hooks into Chrome’s debugging protocol to monit
 
 ### How It Works
 - **background.js** uses the Chrome Debugger API (`chrome.debugger`) to listen for `Network.requestWillBeSent` and `Network.responseReceived` events.  
-- When it detects requests to `workspacevideo-pa.clients6.google.com`, it stores the request and retrieves its response body.  
-- It parses the JSON response for `progressiveTranscodes` URLs (the direct MP4 links) and the video title.  
+- When it detects requests to Drive's playback API (`content-workspacevideo-pa.googleapis.com`, or the older `workspacevideo-pa.clients6.google.com`), it stores the request and retrieves its response body once loading finishes.  
+- It parses the JSON response for `progressiveTranscodes` URLs (the direct MP4 links), picks the highest resolution, and reads the video title.  
 - **popup.js** polls the background script every second for captured requests, updates the UI with any new videos, and invokes `chrome.downloads.download` when you click a download button.  
 - State (enabled/disabled) is persisted via `chrome.storage.local`, and you can toggle it per‑tab.
 
