@@ -6,8 +6,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnOn = document.getElementById('btnOn');
     const btnOff = document.getElementById('btnOff');
     const reloadBtn = document.querySelector('.reload-btn');
+    const folderRow = document.getElementById('folderRow');
+    const folderInput = document.getElementById('folderInput');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
 
     let renderedKey = null;
+    let currentVideos = [];
 
     function showStatus(text, isError = false) {
         statusMessage.textContent = text;
@@ -62,6 +66,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         header.classList.remove('hidden');
+        folderRow.classList.remove('hidden');
         downloadContainer.classList.remove('hidden');
         statusMessage.classList.remove('hidden');
         notDriveMessage.classList.add('hidden');
@@ -85,18 +90,40 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeTabId = tab.id;
         const waitingText = "Waiting for video. Press play on the video; if nothing shows, reload the page.";
 
-        // The download page fetches the video in pieces, which is much faster than a normal Chrome download.
-        function downloadVideo(req) {
-            const query = new URLSearchParams({
-                url: req.lastItagUrl,
-                filename: buildDownloadFilename(req.videoTitle, req.mimeType),
-                mime: req.mimeType || "video/mp4"
+        chrome.storage.local.get(['downloadFolder'], (result) => {
+            folderInput.value = result.downloadFolder || "";
+        });
+        folderInput.addEventListener('input', () => {
+            chrome.storage.local.set({ downloadFolder: folderInput.value });
+        });
+        downloadAllBtn.addEventListener('click', () => downloadVideos(currentVideos));
+
+        // The download page fetches videos in pieces (much faster than a normal Chrome download),
+        // one video after another.
+        function downloadVideos(videos) {
+            if (videos.length === 0) return;
+            const folder = buildFolderPath(folderInput.value);
+            const jobs = videos.map(req => {
+                const filename = buildDownloadFilename(req.videoTitle, req.mimeType);
+                return {
+                    url: req.lastItagUrl,
+                    filename: folder ? `${folder}/${filename}` : filename,
+                    mime: req.mimeType || "video/mp4"
+                };
             });
+            const query = new URLSearchParams({ jobs: JSON.stringify(jobs) });
             chrome.tabs.create({ url: chrome.runtime.getURL("download.html") + "#" + query });
+        }
+
+        function downloadVideo(req) {
+            downloadVideos([req]);
         }
 
         // Rebuild the list only when it changes, so clicks are not lost and messages stay visible.
         function renderVideos(videos) {
+            currentVideos = videos;
+            downloadAllBtn.disabled = videos.length === 0;
+            downloadAllBtn.textContent = videos.length > 0 ? `⬇ All (${videos.length})` : "⬇ All";
             const key = JSON.stringify(videos.map(req => [req.videoTitle, req.lastItagUrl]));
             if (key === renderedKey) return;
             renderedKey = key;
@@ -136,6 +163,9 @@ document.addEventListener("DOMContentLoaded", () => {
                             downloadContainer.innerHTML = "";
                             renderedKey = null;
                         }
+                        currentVideos = [];
+                        downloadAllBtn.disabled = true;
+                        downloadAllBtn.textContent = "⬇ All";
                         chrome.storage.local.get(['extensionEnabled'], (result) => {
                             if (result.extensionEnabled) {
                                 showStatus(waitingText);

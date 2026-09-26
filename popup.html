@@ -18,7 +18,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            height: 300px;
+            height: 345px;
             width: 350px;
             padding: 20px;
             text-align: center;
@@ -138,6 +138,37 @@
             font-size: 14px;
             padding: 0 5px;
         }
+        .folder-row {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #folderInput {
+            flex: 1;
+            min-width: 0;
+            padding: 6px 8px;
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #444;
+            color: #fff;
+            font-size: 12px;
+        }
+        .download-all-btn {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .download-all-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         .reload-btn.active {
             display: block;
         }
@@ -154,6 +185,10 @@
     </div>
     <div id="notDriveMessage" class="hidden">
         It works only in Google Drive to download private videos
+    </div>
+    <div id="folderRow" class="folder-row hidden">
+        <input id="folderInput" type="text" placeholder="Save in folder (optional)" title="Folder inside Downloads, e.g. Course/Live Classes">
+        <button id="downloadAllBtn" class="download-all-btn" disabled>⬇ All</button>
     </div>
     <div id="downloadContainer" class="hidden"></div>
     <div id="statusMessage" class="hidden"></div>

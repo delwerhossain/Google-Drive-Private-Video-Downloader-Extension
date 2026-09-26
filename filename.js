@@ -18,17 +18,31 @@ function buildDownloadFilename(title, mimeType) {
     const mime = (mimeType || "").split(";")[0].trim().toLowerCase();
     const extension = EXTENSION_BY_MIME_TYPE[mime] || "mp4";
 
-    let name = String(title || "").toWellFormed()
+    let name = trimEnds(cleanText(title)).replace(VIDEO_EXTENSION, "");
+    name = trimEnds(truncateUtf8(name, MAX_NAME_BYTES));
+
+    if (!name) name = "Google Drive video";
+    return `${avoidDeviceName(name)}.${extension}`;
+}
+
+// "Course/Live Classes" -> a folder path inside Downloads; "" when empty. ".." and other unsafe parts are dropped.
+function buildFolderPath(folder) {
+    return String(folder || "").split(/[\\/]+/)
+        .map(part => avoidDeviceName(trimEnds(truncateUtf8(trimEnds(cleanText(part)), MAX_NAME_BYTES))))
+        .filter(Boolean)
+        .join("/");
+}
+
+function cleanText(text) {
+    return String(text || "").toWellFormed()
         .replace(/\p{Cc}/gu, " ")                                   // tabs, new lines
         .replace(/[\p{Cf}\p{Noncharacter_Code_Point}]/gu, "")        // invisible characters, e.g. zero-width joiner in Bangla
         .replace(/["*/:<>?\\|]/g, "-")
         .replace(/\p{White_Space}+/gu, " ");
-    name = trimEnds(name).replace(VIDEO_EXTENSION, "");
-    name = trimEnds(truncateUtf8(name, MAX_NAME_BYTES));
+}
 
-    if (!name) name = "Google Drive video";
-    if (WINDOWS_DEVICE_NAME.test(name.split(".")[0])) name = "_" + name;
-    return `${name}.${extension}`;
+function avoidDeviceName(name) {
+    return name && WINDOWS_DEVICE_NAME.test(name.split(".")[0]) ? "_" + name : name;
 }
 
 // A name may not start or end with whitespace, "." or "~".

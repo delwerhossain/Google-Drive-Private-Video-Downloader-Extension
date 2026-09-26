@@ -58,18 +58,29 @@
             font-size: 14px;
             margin-top: 16px;
         }
+        #jobList {
+            list-style: none;
+            margin-top: 16px;
+            font-size: 13px;
+            color: #ddd;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            word-break: break-word;
+        }
         .error {
-            color: #ff6b6b;
+            color: #ff6b6b !important;
         }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>Video Downloader</h1>
+        <h1 id="heading">Video Downloader</h1>
         <div id="fileName"></div>
         <div class="track"><div id="bar"></div></div>
         <div id="progress"></div>
         <div id="status"></div>
+        <ul id="jobList"></ul>
     </div>
     <script src="download.js"></script>
 </body>

@@ -28,7 +28,7 @@ Drive Private Video Downloader hooks into Chrome’s debugging protocol to monit
 2. Click the extension icon to open the popup.  
 3. Click **ON** to enable capturing for the current tab. The extension will reload the tab automatically.  
 4. Press play on the video. The popup will list the video title(s) and a download button (⬇).  
-5. Click the download button to save the video locally. Characters that are not allowed in file names (such as `:` or `/`) are replaced with `-`.
+5. Click the download button to save the video locally, or **⬇ All** to save every listed video one after another. Optionally type a folder (e.g. `Course/Live Classes`) to save inside that folder in Downloads. Characters that are not allowed in file names (such as `:` or `/`) are replaced with `-`.
 
 ### How It Works
 - **background.js** uses the Chrome Debugger API (`chrome.debugger`) to listen for `Network.requestWillBeSent` and `Network.responseReceived` events.  

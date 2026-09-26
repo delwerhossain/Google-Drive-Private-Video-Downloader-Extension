@@ -1,21 +1,19 @@
-// Downloads a Drive video in 10 MB pieces. Google serves one long request at about playback speed
+// Downloads Drive videos in 10 MB pieces. Google serves one long request at about playback speed
 // (~0.7 MB/s in testing), but each Range request at full speed (~10 MB/s).
+// Videos are downloaded one after another, so several large videos never sit in memory at once.
 const CHUNK_SIZE = 10 * 1024 * 1024;
 const PARALLEL = 4;
 const RETRIES = 3;
 
 const params = new URLSearchParams(location.hash.slice(1));
-const videoUrl = params.get("url");
-const filename = params.get("filename");
-const mimeType = params.get("mime") || "video/mp4";
+const jobs = JSON.parse(params.get("jobs") || "[]");
 
+const headingEl = document.getElementById("heading");
 const nameEl = document.getElementById("fileName");
 const barEl = document.getElementById("bar");
 const progressEl = document.getElementById("progress");
 const statusEl = document.getElementById("status");
-
-nameEl.textContent = filename;
-document.title = "Downloading: " + filename;
+const listEl = document.getElementById("jobList");
 
 function showStatus(text, isError = false) {
     statusEl.textContent = text;
@@ -34,17 +32,17 @@ function showProgress(done, total, startedAt) {
     progressEl.textContent = `${formatMB(done)} / ${formatMB(total)} · ${formatMB(speed)}/s · ${remaining}s left`;
 }
 
-async function getTotalSize() {
-    const response = await fetch(videoUrl, { headers: { Range: "bytes=0-0" }, cache: "no-store" });
+async function getTotalSize(url) {
+    const response = await fetch(url, { headers: { Range: "bytes=0-0" }, cache: "no-store" });
     const total = Number(response.headers.get("content-range")?.split("/")[1]);
     if (response.status !== 206 || !total) throw new Error(`HTTP ${response.status}`);
     return total;
 }
 
-async function fetchChunk(start, end) {
+async function fetchChunk(url, start, end) {
     for (let attempt = 1; ; attempt++) {
         try {
-            const response = await fetch(videoUrl, { headers: { Range: `bytes=${start}-${end}` }, cache: "no-store" });
+            const response = await fetch(url, { headers: { Range: `bytes=${start}-${end}` }, cache: "no-store" });
             if (response.status !== 206) throw new Error(`HTTP ${response.status}`);
             // A Blob (not an ArrayBuffer) lets Chrome keep large videos on disk instead of in memory.
             const blob = await response.blob();
@@ -57,36 +55,38 @@ async function fetchChunk(start, end) {
     }
 }
 
-function saveFile(url, onSaved) {
-    chrome.downloads.download({ url: url, filename: filename }, (downloadId) => {
-        if (chrome.runtime.lastError) {
-            showStatus(`Can't save: ${chrome.runtime.lastError.message}`, true);
-            return;
-        }
-        const onChanged = (delta) => {
-            if (delta.id !== downloadId || !delta.state) return;
-            if (delta.state.current === "complete") {
-                showStatus("Done! Saved to your Downloads folder. You can close this tab.");
-                onSaved?.();
-            } else if (delta.state.current === "interrupted") {
-                showStatus(`Download failed (${delta.error?.current || "unknown error"}). Reload the Drive page, press play, then try again.`, true);
-            } else {
+// Resolves when Chrome has written the file, rejects with the reason if it could not.
+function saveFile(url, filename) {
+    return new Promise((resolve, reject) => {
+        chrome.downloads.download({ url: url, filename: filename }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
                 return;
             }
-            chrome.downloads.onChanged.removeListener(onChanged);
-        };
-        chrome.downloads.onChanged.addListener(onChanged);
+            const onChanged = (delta) => {
+                if (delta.id !== downloadId || !delta.state) return;
+                if (delta.state.current === "complete") {
+                    resolve();
+                } else if (delta.state.current === "interrupted") {
+                    reject(new Error(delta.error?.current || "unknown error"));
+                } else {
+                    return;
+                }
+                chrome.downloads.onChanged.removeListener(onChanged);
+            };
+            chrome.downloads.onChanged.addListener(onChanged);
+        });
     });
 }
 
-async function run() {
+async function downloadJob(job) {
     let total;
     try {
-        total = await getTotalSize();
+        total = await getTotalSize(job.url);
     } catch (e) {
         // Pieces are not supported for this link: fall back to a normal (slower) Chrome download.
         showStatus("Fast mode is not available for this video, using a normal download (slower)...");
-        saveFile(videoUrl);
+        await saveFile(job.url, job.filename);
         return;
     }
 
@@ -103,7 +103,7 @@ async function run() {
     const worker = async () => {
         while (next < ranges.length && !failed) {
             const index = next++;
-            parts[index] = await fetchChunk(...ranges[index]);
+            parts[index] = await fetchChunk(job.url, ...ranges[index]);
             done += parts[index].size;
             showProgress(done, total, startedAt);
         }
@@ -114,13 +114,50 @@ async function run() {
         await Promise.all(Array.from({ length: Math.min(PARALLEL, ranges.length) }, worker));
     } catch (e) {
         failed = true;
-        showStatus(`Download failed (${e.message}). Reload the Drive page, press play, then try again.`, true);
-        return;
+        throw e;
     }
 
     showStatus("Saving file...");
-    const blobUrl = URL.createObjectURL(new Blob(parts, { type: mimeType }));
-    saveFile(blobUrl, () => URL.revokeObjectURL(blobUrl));
+    const blobUrl = URL.createObjectURL(new Blob(parts, { type: job.mime || "video/mp4" }));
+    try {
+        await saveFile(blobUrl, job.filename);
+    } finally {
+        URL.revokeObjectURL(blobUrl);
+    }
+}
+
+async function run() {
+    const items = jobs.map(job => {
+        const li = document.createElement("li");
+        li.textContent = "⏳ " + job.filename;
+        listEl.appendChild(li);
+        return li;
+    });
+
+    let failures = 0;
+    for (let i = 0; i < jobs.length; i++) {
+        headingEl.textContent = jobs.length > 1 ? `Video ${i + 1} of ${jobs.length}` : "Video Downloader";
+        nameEl.textContent = jobs[i].filename;
+        document.title = `Downloading ${i + 1}/${jobs.length}: ${jobs[i].filename}`;
+        barEl.style.width = "0";
+        progressEl.textContent = "";
+        items[i].textContent = "⬇ " + jobs[i].filename;
+        try {
+            await downloadJob(jobs[i]);
+            items[i].textContent = "✅ " + jobs[i].filename;
+        } catch (e) {
+            failures++;
+            items[i].textContent = `❌ ${jobs[i].filename} (${e.message})`;
+            items[i].classList.add("error");
+        }
+    }
+
+    document.title = failures ? `Finished with ${failures} failed` : "All downloads finished";
+    if (failures) {
+        showStatus(`${failures} video(s) failed. Reload those Drive pages, press play, then try them again.`, true);
+    } else {
+        showStatus("Done! Saved to your Downloads folder. You can close this tab.");
+    }
 }
 
 run();
