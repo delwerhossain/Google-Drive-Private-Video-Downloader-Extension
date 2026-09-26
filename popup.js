@@ -7,6 +7,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const btnOff = document.getElementById('btnOff');
     const reloadBtn = document.querySelector('.reload-btn');
 
+    let renderedKey = null;
+
+    function showStatus(text, isError = false) {
+        statusMessage.textContent = text;
+        statusMessage.classList.toggle("error", isError);
+    }
+
     function updateUI(isEnabled) {
     btnOn.disabled = isEnabled;
     btnOff.disabled = !isEnabled;
@@ -19,9 +26,10 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (!newState) {
                 downloadContainer.innerHTML = '';
-                statusMessage.textContent = "Extension stopped.";
+                renderedKey = null;
+                showStatus("Extension stopped.");
                 setTimeout(() => {
-                    statusMessage.textContent = "Click ON to start extension.";
+                    showStatus("Click ON to start extension.");
                 }, 2000);
             }
 
@@ -75,52 +83,83 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         const activeTabId = tab.id;
+        const waitingText = "Waiting for video. Press play on the video; if nothing shows, reload the page.";
+
+        // Chrome's download manager reports failures that happen after the download starts (e.g. an expired link).
+        function watchDownload(downloadId, filename) {
+            const onChanged = (delta) => {
+                if (delta.id !== downloadId || !delta.state) return;
+                if (delta.state.current === "complete") {
+                    showStatus(`Downloaded: ${filename}`);
+                } else if (delta.state.current === "interrupted") {
+                    showStatus(`Download failed (${delta.error?.current || "unknown error"}). Reload the page, play the video, then try again.`, true);
+                } else {
+                    return;
+                }
+                chrome.downloads.onChanged.removeListener(onChanged);
+            };
+            chrome.downloads.onChanged.addListener(onChanged);
+        }
+
+        function downloadVideo(req) {
+            const filename = buildDownloadFilename(req.videoTitle, req.mimeType);
+            chrome.downloads.download({
+                url: req.lastItagUrl,
+                filename: filename
+            }, (downloadId) => {
+                if (chrome.runtime.lastError) {
+                    showStatus(`Can't download: ${chrome.runtime.lastError.message}`, true);
+                    return;
+                }
+                showStatus(`Downloading: ${filename}`);
+                watchDownload(downloadId, filename);
+            });
+        }
+
+        // Rebuild the list only when it changes, so clicks are not lost and messages stay visible.
+        function renderVideos(videos) {
+            const key = JSON.stringify(videos.map(req => [req.videoTitle, req.lastItagUrl]));
+            if (key === renderedKey) return;
+            renderedKey = key;
+            downloadContainer.innerHTML = "";
+            videos.forEach((req) => {
+                const item = document.createElement("div");
+                item.classList.add("video-item");
+
+                const titleSpan = document.createElement("span");
+                titleSpan.classList.add("video-title");
+                titleSpan.textContent = req.videoTitle.length > 35
+                    ? req.videoTitle.substring(0, 35) + "..."
+                    : req.videoTitle;
+
+                const btn = document.createElement("button");
+                btn.classList.add("download-btn");
+                btn.innerHTML = "⬇";
+                btn.addEventListener("click", () => downloadVideo(req));
+
+                item.appendChild(titleSpan);
+                item.appendChild(btn);
+                downloadContainer.appendChild(item);
+            });
+        }
+
         setInterval(() => {
             chrome.runtime.sendMessage({ type: "getRequests" }, (response) => {
                 if (response && response.requests) {
-                    const matchingRequests = [];
-                    for (const requestId in response.requests) {
-                        const req = response.requests[requestId];
-                        if (req.tabId === activeTabId && req.lastItagUrl && req.videoTitle) {
-                            matchingRequests.push(req);
-                        }
-                    }
+                    const matchingRequests = Object.values(response.requests).filter(req =>
+                        req.tabId === activeTabId && req.lastItagUrl && req.videoTitle
+                    );
                     if (matchingRequests.length > 0) {
-                        statusMessage.textContent = "";
-                        downloadContainer.innerHTML = "";
-                        matchingRequests.forEach((req) => {
-                            const item = document.createElement("div");
-                            item.classList.add("video-item");
-
-                            const titleSpan = document.createElement("span");
-                            titleSpan.classList.add("video-title");
-                            titleSpan.textContent = req.videoTitle.length > 35
-                                ? req.videoTitle.substring(0, 35) + "..." 
-                                : req.videoTitle;
-
-                            const btn = document.createElement("button");
-                            btn.classList.add("download-btn");
-                            btn.innerHTML = "⬇";
-                            btn.addEventListener("click", () => {
-                                chrome.downloads.download({
-                                    url: req.lastItagUrl,
-                                    filename: req.videoTitle
-                                }, () => {
-                                    if (chrome.runtime.lastError) {
-                                        statusMessage.textContent = "Can't able to download";
-                                        statusMessage.classList.add("error");
-                                    }
-                                });
-                            });
-
-                            item.appendChild(titleSpan);
-                            item.appendChild(btn);
-                            downloadContainer.appendChild(item);
-                        });
+                        if (statusMessage.textContent === waitingText) showStatus("");
+                        renderVideos(matchingRequests);
                     } else {
+                        if (renderedKey !== null) {
+                            downloadContainer.innerHTML = "";
+                            renderedKey = null;
+                        }
                         chrome.storage.local.get(['extensionEnabled'], (result) => {
                             if (result.extensionEnabled) {
-                                statusMessage.textContent = "Waiting for new video source. If not working reload the page.";
+                                showStatus(waitingText);
                             }
                         });
                     }

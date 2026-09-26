@@ -27,8 +27,8 @@ Drive Private Video Downloader hooks into Chrome’s debugging protocol to monit
 1. Navigate to any Google Drive video URL (e.g. `https://drive.google.com/file/d/…/view`).  
 2. Click the extension icon to open the popup.  
 3. Click **ON** to enable capturing for the current tab. The extension will reload the tab automatically.  
-4. As the video loads, the popup will list the video title(s) and a download button (⬇).  
-5. Click the download button to save the video locally.
+4. Press play on the video. The popup will list the video title(s) and a download button (⬇).  
+5. Click the download button to save the video locally. Characters that are not allowed in file names (such as `:` or `/`) are replaced with `-`.
 
 ### How It Works
 - **background.js** uses the Chrome Debugger API (`chrome.debugger`) to listen for `Network.requestWillBeSent` and `Network.responseReceived` events.  

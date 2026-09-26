@@ -154,17 +154,19 @@ chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
                 "Network.getResponseBody",
                 { requestId: requestId },
                 (result) => {
-                    if (chrome.runtime.lastError) return;
-                    capturedRequests[requestId].responseBody = result.body;
-                    capturedRequests[requestId].base64Encoded = result.base64Encoded;
+                    const req = capturedRequests[requestId];
+                    if (chrome.runtime.lastError || !req) return;
+                    req.responseBody = result.body;
+                    req.base64Encoded = result.base64Encoded;
                     try {
                         const data = JSON.parse(result.body);
-                        if (data.mediaStreamingData?.formatStreamingData?.progressiveTranscodes) {
-                            const transcodes = data.mediaStreamingData.formatStreamingData.progressiveTranscodes;
-                            capturedRequests[requestId].lastItagUrl = pickBestTranscode(transcodes)?.url;
-                        }
-                        if (data.mediaMetadata?.title) {
-                            capturedRequests[requestId].videoTitle = data.mediaMetadata.title;
+                        const transcodes = data.mediaStreamingData?.formatStreamingData?.progressiveTranscodes;
+                        const best = transcodes && pickBestTranscode(transcodes);
+                        if (best) {
+                            req.lastItagUrl = best.url;
+                            req.mimeType = best.transcodeMetadata?.mimeType;
+                            // The popup only lists videos that have a title.
+                            req.videoTitle = data.mediaMetadata?.title || "Google Drive video";
                         }
                     } catch (e) {}
                 }
