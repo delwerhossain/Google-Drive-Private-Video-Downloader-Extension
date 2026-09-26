@@ -17,6 +17,11 @@ function pickBestTranscode(transcodes) {
     );
 }
 
+// The Drive file id in ".../v1/drive/media/{id}/playback", used to list each video only once.
+function getVideoKey(url, title) {
+    return url.match(/\/media\/([^/?]+)/)?.[1] || title;
+}
+
 let capturedRequests = {};
 let pollingTimers = {};
 let autoPopupCount = {};
@@ -69,15 +74,18 @@ function cleanupTabResources(tabId) {
     const debuggee = { tabId: tabId };
     chrome.debugger.detach(debuggee, () => {
         if (chrome.runtime.lastError) return;
-        
-        Object.keys(capturedRequests).forEach(requestId => {
-            if (capturedRequests[requestId].tabId === tabId) {
-                delete capturedRequests[requestId];
-            }
-        });
-        delete autoPopupCount[tabId];
+        clearCapturedVideos(tabId);
     });
     pendingTabs.delete(tabId);
+}
+
+function clearCapturedVideos(tabId) {
+    Object.keys(capturedRequests).forEach(requestId => {
+        if (capturedRequests[requestId].tabId === tabId) {
+            delete capturedRequests[requestId];
+        }
+    });
+    delete autoPopupCount[tabId];
 }
 
 function startAutoCaptureForTab(tabId) {
@@ -131,6 +139,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     cleanupTabResources(tabId);
 });
 
+// Chrome detaches when the user clicks "Cancel" on its debugging bar or opens DevTools.
+// Forget the old session so the next page load attaches again.
+chrome.debugger.onDetach.addListener((source) => {
+    const tabId = source.tabId;
+    if (pollingTimers[tabId]) {
+        clearInterval(pollingTimers[tabId]);
+        delete pollingTimers[tabId];
+    }
+});
+
 chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
     const tabId = debuggeeId.tabId;
     if (!extensionEnabled && !pendingTabs.has(tabId)) return;
@@ -167,6 +185,14 @@ chrome.debugger.onEvent.addListener((debuggeeId, method, params) => {
                             req.mimeType = best.transcodeMetadata?.mimeType;
                             // The popup only lists videos that have a title.
                             req.videoTitle = data.mediaMetadata?.title || "Google Drive video";
+                            // Keep only the newest capture of each video in a tab.
+                            req.videoKey = getVideoKey(req.url, req.videoTitle);
+                            Object.keys(capturedRequests).forEach(otherId => {
+                                const other = capturedRequests[otherId];
+                                if (otherId !== requestId && other.tabId === req.tabId && other.videoKey === req.videoKey) {
+                                    delete capturedRequests[otherId];
+                                }
+                            });
                         }
                     } catch (e) {}
                 }
