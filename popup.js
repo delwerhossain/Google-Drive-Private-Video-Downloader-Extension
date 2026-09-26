@@ -85,35 +85,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeTabId = tab.id;
         const waitingText = "Waiting for video. Press play on the video; if nothing shows, reload the page.";
 
-        // Chrome's download manager reports failures that happen after the download starts (e.g. an expired link).
-        function watchDownload(downloadId, filename) {
-            const onChanged = (delta) => {
-                if (delta.id !== downloadId || !delta.state) return;
-                if (delta.state.current === "complete") {
-                    showStatus(`Downloaded: ${filename}`);
-                } else if (delta.state.current === "interrupted") {
-                    showStatus(`Download failed (${delta.error?.current || "unknown error"}). Reload the page, play the video, then try again.`, true);
-                } else {
-                    return;
-                }
-                chrome.downloads.onChanged.removeListener(onChanged);
-            };
-            chrome.downloads.onChanged.addListener(onChanged);
-        }
-
+        // The download page fetches the video in pieces, which is much faster than a normal Chrome download.
         function downloadVideo(req) {
-            const filename = buildDownloadFilename(req.videoTitle, req.mimeType);
-            chrome.downloads.download({
+            const query = new URLSearchParams({
                 url: req.lastItagUrl,
-                filename: filename
-            }, (downloadId) => {
-                if (chrome.runtime.lastError) {
-                    showStatus(`Can't download: ${chrome.runtime.lastError.message}`, true);
-                    return;
-                }
-                showStatus(`Downloading: ${filename}`);
-                watchDownload(downloadId, filename);
+                filename: buildDownloadFilename(req.videoTitle, req.mimeType),
+                mime: req.mimeType || "video/mp4"
             });
+            chrome.tabs.create({ url: chrome.runtime.getURL("download.html") + "#" + query });
         }
 
         // Rebuild the list only when it changes, so clicks are not lost and messages stay visible.

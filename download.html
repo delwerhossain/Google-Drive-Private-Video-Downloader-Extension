@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Downloading video</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2c2c2c;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            padding: 60px 20px;
+        }
+        .card {
+            width: 100%;
+            max-width: 560px;
+            background: #444;
+            border-radius: 8px;
+            padding: 24px;
+        }
+        h1 {
+            font-size: 18px;
+            font-weight: normal;
+            margin-bottom: 8px;
+        }
+        #fileName {
+            font-size: 14px;
+            color: #ddd;
+            word-break: break-word;
+            margin-bottom: 20px;
+        }
+        .track {
+            width: 100%;
+            height: 10px;
+            background: #2c2c2c;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        #bar {
+            width: 0;
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        #progress {
+            font-size: 13px;
+            color: #ddd;
+            margin-top: 8px;
+        }
+        #status {
+            font-size: 14px;
+            margin-top: 16px;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Video Downloader</h1>
+        <div id="fileName"></div>
+        <div class="track"><div id="bar"></div></div>
+        <div id="progress"></div>
+        <div id="status"></div>
+    </div>
+    <script src="download.js"></script>
+</body>
+</html>
